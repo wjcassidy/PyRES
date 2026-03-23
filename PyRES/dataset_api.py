@@ -4,6 +4,7 @@ from collections import OrderedDict
 import json
 # PyTorch
 import torch, torchaudio
+from scipy.io import wavfile
 # PyRES
 from PyRES.functional import energy_coupling
 
@@ -46,7 +47,7 @@ def get_ll_info(
             - dict: Low-level information of the room.
     """
     ds_dir = ds_dir.rstrip('/')
-    with open(f"{ds_dir}/data/{room_dir}/roomInfo.json", 'r') as file:
+    with open(f"{ds_dir}/{room_dir}/roomInfo.json", 'r') as file:
         data = json.load(file)
 
     return data
@@ -199,7 +200,7 @@ def get_positions_of(
 def get_rir_metadata(
         ds_dir: str,
         room_dir: str,
-    ) -> tuple[int, int, OrderedDict]:
+    ) -> tuple[int, int]:
     r"""
     Retrieves the paths to the RIRs of all transducers in the room.
 
@@ -222,26 +223,14 @@ def get_rir_metadata(
     rir_length = ll_info['RoomImpulseResponses']['LengthInSamples']
 
     # Path root
-    ds_dir = ds_dir.rstrip('/')
-    root = f"{ds_dir}/data/{room_dir}"
+    # ds_dir = ds_dir.rstrip('/')
+    # root = f"{ds_dir}/{room_dir}"
 
     # Part of the path common to all RIRs
-    rir_path_1 = ll_info['RoomImpulseResponses']['Directory']
-    common_path = f"{root}/{rir_path_1}"
+    # rir_path_1 = ll_info['RoomImpulseResponses']['Directory']
+    # common_path = f"{root}/{rir_path_1}"
 
-    # Specific paths for each type of transducer
-    stg_to_aud = get_rir_foldername_of(ll_info=ll_info, emitter_type='stg', receiver_type='aud')
-    stg_to_sys = get_rir_foldername_of(ll_info=ll_info, emitter_type='stg', receiver_type='mcs')
-    sys_to_aud = get_rir_foldername_of(ll_info=ll_info, emitter_type='lds', receiver_type='aud')
-    sys_to_sys = get_rir_foldername_of(ll_info=ll_info, emitter_type='lds', receiver_type='mcs')
-
-    paths = OrderedDict()
-    paths.update({'stg_to_aud': f"{common_path}/{stg_to_aud}"})
-    paths.update({'stg_to_sys': f"{common_path}/{stg_to_sys}"})
-    paths.update({'sys_to_aud': f"{common_path}/{sys_to_aud}"})
-    paths.update({'sys_to_sys': f"{common_path}/{sys_to_sys}"})
-
-    return samplerate, rir_length, paths
+    return samplerate, rir_length
 
 def get_rir_foldername_of(
         ll_info: dict,
@@ -291,14 +280,17 @@ def get_rirs(
             - int: Length of the room impulse responses in samples.
     """
     # Get RIR metadata
-    rir_fs, rir_length, paths = get_rir_metadata(
+    rir_fs, rir_length = get_rir_metadata(
         ds_dir=ds_dir,
         room_dir=room_dir
     )
 
+    rir_directory = f"{ds_dir}/{room_dir}"
+
     # Stage to audience
     stg_to_aud, _ = get_rirs_of(
-        path=paths["stg_to_aud"],
+        directory=rir_directory,
+        matrix_id="SR",
         emitter_idx=transducer_indices['stg'],
         receiver_idx=transducer_indices['aud'],
         origin_fs=rir_fs,
@@ -307,7 +299,8 @@ def get_rirs(
     )
     # Stage to system
     stg_to_sys, _ = get_rirs_of(
-        path=paths['stg_to_sys'],
+        directory=rir_directory,
+        matrix_id="SM",
         emitter_idx=transducer_indices['stg'],
         receiver_idx=transducer_indices['mcs'],
         origin_fs=rir_fs,
@@ -316,7 +309,8 @@ def get_rirs(
     )
     # System to audience
     sys_to_aud, _ = get_rirs_of(
-        path=paths['sys_to_aud'],
+        directory=rir_directory,
+        matrix_id="LR",
         emitter_idx=transducer_indices['lds'],
         receiver_idx=transducer_indices['aud'],
         origin_fs=rir_fs,
@@ -325,7 +319,8 @@ def get_rirs(
     )
     # System to system
     sys_to_sys, rir_length = get_rirs_of(
-        path=paths['sys_to_sys'],
+        directory=rir_directory,
+        matrix_id="LM",
         emitter_idx=transducer_indices['lds'],
         receiver_idx=transducer_indices['mcs'],
         origin_fs=rir_fs,
@@ -342,7 +337,8 @@ def get_rirs(
     return rirs, rir_length
 
 def get_rirs_of(
-        path: str,
+        directory: str,
+        matrix_id: str,
         emitter_idx: int,
         receiver_idx: int,
         origin_fs: int,
@@ -353,7 +349,8 @@ def get_rirs_of(
     Loads the requested room impulse responses from the dataset and returns them in a matrix.
 
         **Args**:
-            - path (str): Path to the room impulse responses in the dataset.
+            - directory (str): Path to the room impulse responses in the dataset.
+            - matrix_id (str): Identifier for the matrix to read within the directory (e.g. "LM")
             - emitter_idx (list[int]): Indices of the emitters.
             - receiver_idx (list[int]): Indices of the receivers.
             - fs (int): Sample rate [Hz].
@@ -366,22 +363,25 @@ def get_rirs_of(
     n_emitters = len(emitter_idx)
     n_receivers = len(receiver_idx)
 
-    n_samples = origin_len
+    max_n_samples = origin_len
     resample = False
     if target_fs != origin_fs:
-        n_samples = int(origin_len * target_fs / origin_fs)
+        max_n_samples = int(origin_len * target_fs / origin_fs)
         resample = True
 
-    matrix = torch.zeros(n_samples, n_receivers, n_emitters)
-    for i,r in enumerate(receiver_idx):
-        for j,e in enumerate(emitter_idx):
-            filename = f"{path}/E{e+1:03d}_R{r+1:03d}_M01.wav"
-            w = torchaudio.load(filename)[0]
+    matrix = torch.zeros(max_n_samples, n_receivers, n_emitters)
+    for rec_index,r in enumerate(receiver_idx):
+        for src_index,e in enumerate(emitter_idx):
+            filename = f"{directory}/H_{matrix_id}_R{r+1}_S{e+1}.wav"
+            _, w = wavfile.read(filename)
+            ir = torch.from_numpy(w)
             if resample:
-                w = torchaudio.transforms.Resample(origin_fs, target_fs)(w)
-            matrix[:,i,j] = w.permute(1,0).squeeze()
+                ir = torchaudio.transforms.Resample(origin_fs, target_fs)(ir)
 
-    return matrix, n_samples
+            ir_trunc_length = min(ir.shape[0], max_n_samples)
+            matrix[:ir_trunc_length,rec_index,src_index] = ir[:ir_trunc_length]
+
+    return matrix, max_n_samples
 
 def normalize_rirs(
         fs: int,

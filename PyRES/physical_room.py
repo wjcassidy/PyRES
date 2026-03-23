@@ -381,13 +381,13 @@ class PhRoom_dataset(PhRoom):
             aud_idx=aud_idx
         )
 
-        self.transducer_positions = get_transducer_positions(
-            ll_info=self.low_level_info,
-            stg_idx=self.transducer_indices['stg'],
-            mcs_idx=self.transducer_indices['mcs'],
-            lds_idx=self.transducer_indices['lds'],
-            aud_idx=self.transducer_indices['aud']
-        )
+        # self.transducer_positions = get_transducer_positions(
+        #     ll_info=self.low_level_info,
+        #     stg_idx=self.transducer_indices['stg'],
+        #     mcs_idx=self.transducer_indices['mcs'],
+        #     lds_idx=self.transducer_indices['lds'],
+        #     aud_idx=self.transducer_indices['aud']
+        # )
 
         self.h_SA, self.h_SM, self.h_LA, self.h_LM, self.rir_length = self.__load_rirs(
             ds_dir=dataset_directory
