@@ -173,3 +173,6 @@ cython_debug/
 # PyRES
 /model_states
 /dataRES
+.idea/inspectionProfiles
+.idea
+data
