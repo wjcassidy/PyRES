@@ -60,8 +60,8 @@ def train_virtual_room(args) -> None:
     alias_decay_db = -20            # Anti-time-aliasing decay in dB
 
     # Physical room
-    dataset_directory = './dataRES'
-    room_name = 'Otala'
+    dataset_directory = '../data'
+    room_name = 'SmallSystem'
 
     physical_room = PhRoom_dataset(
         fs=samplerate,
