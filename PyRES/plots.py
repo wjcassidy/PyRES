@@ -389,7 +389,7 @@ def plot_spectrograms_compare(ir_1: torch.Tensor, ir_2: torch.Tensor, fs: int, n
     
     plt.subplot(2,1,1)
     plt.pcolormesh(t, f, 10*torch.log10(Spec_init), cmap='magma', vmin=-100, vmax=0)
-    plt.xlim(0, ir_1.shape[0]/fs)
+    plt.xlim(0, 4)
     plt.ylim(20, fs//2)
     plt.yscale('log')
     plt.title(label1)
@@ -397,7 +397,7 @@ def plot_spectrograms_compare(ir_1: torch.Tensor, ir_2: torch.Tensor, fs: int, n
 
     plt.subplot(2,1,2)
     im = plt.pcolormesh(t, f, 10*torch.log10(Spec_opt), cmap='magma', vmin=-100, vmax=0)
-    plt.xlim(0, ir_1.shape[0]/fs)
+    plt.xlim(0, 4)
     plt.ylim(20, fs//2)
     plt.yscale('log')
     plt.title(label2)

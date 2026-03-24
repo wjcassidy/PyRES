@@ -3,6 +3,8 @@
 from collections import OrderedDict
 import os
 import time
+
+import flamo
 # PyTorch
 import torch
 import torch.nn as nn
@@ -40,6 +42,7 @@ class RES(object):
             self,
             physical_room: PhRoom,
             virtual_room: VrRoom,
+            loop_gain_dB: float = -3.0,
         ):
         r"""
         Initializes the Reverberation Enhancement System (RES).
@@ -79,7 +82,7 @@ class RES(object):
 
         # Apply safe margin of 2 dB
         gbi_init = self.compute_GBI()
-        self.set_G(db2mag(mag2db(gbi_init) - 3))
+        self.set_G(db2mag(mag2db(gbi_init) + loop_gain_dB))
     
     # ==================================================================================
     # ================================ CHECK METHODS ===================================

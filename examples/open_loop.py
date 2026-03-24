@@ -57,7 +57,7 @@ def train_virtual_room(args) -> None:
     # -------------------- Initialize RES ---------------------
     # Time-frequency
     samplerate = 32000  # Sampling frequency in Hz
-    nfft = samplerate * 3  # FFT size
+    nfft = int(samplerate * 4.5)  # FFT size
     alias_decay_db = 0  # Anti-time-aliasing decay in dB
 
     # Physical room
@@ -75,7 +75,7 @@ def train_virtual_room(args) -> None:
     n_L = physical_room.transducer_number['lds']  # Number of loudspeakers
 
     # Virtual room
-    fir_order = 2 ** 8  # FIR filter order
+    fir_order = 100#2 ** 8  # FIR filter order
     virtual_room = random_FIRs(
         n_M=n_M,
         n_L=n_L,
@@ -132,7 +132,7 @@ def train_virtual_room(args) -> None:
     # ---------------- Initialize Loss Function ---------------
     criterion = MSE_evs_mod(
         iter_num=args.num,
-        freq_points=nfft // 2 + 1,
+        freq_points=2**11,#nfft // 2 + 1,
         samplerate=samplerate,
         lowest_f=20,
         highest_f=15000
@@ -148,7 +148,7 @@ def train_virtual_room(args) -> None:
 
     # ------------------------ Plots -------------------------
     plot_evs_compare(evs_init, evs_opt, samplerate, nfft, 20, 8000)
-    plot_spectrograms_compare(ir_init[:, 0], ir_opt[:, 0], samplerate, nfft=2 ** 11, noverlap=2 ** 10)
+    plot_spectrograms_compare(ir_init[:, 0], ir_opt[:, 0], samplerate, nfft=2**11, noverlap=2**10)
 
     # ---------------- Save the model parameters -------------
     # If desired, you can use the following line to save the virtual room model state.
@@ -166,9 +166,9 @@ if __name__ == '__main__':
     parser = argparse.ArgumentParser()
 
     # ----------------------- Dataset ----------------------
-    parser.add_argument('--num', type=int, default=2 ** 5, help='dataset size')
+    parser.add_argument('--num', type=int, default=32, help='dataset size')
     parser.add_argument('--device', type=str, default='cpu', help='device to use for computation')
-    parser.add_argument('--split', type=float, default=0.8, help='split ratio for training and validation')
+    parser.add_argument('--split', type=float, default=0.9, help='split ratio for training and validation')
     # ---------------------- Training ----------------------
     parser.add_argument('--train_dir', type=str, help='directory to save training results')
     parser.add_argument('--max_epochs', type=int, default=10, help='maximum number of epochs')
