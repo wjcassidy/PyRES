@@ -1,6 +1,7 @@
 # ==================================================================
 # ============================ IMPORTS =============================
 # PyTorch
+import flamo
 import torch
 # FLAMO
 from flamo import dsp, system
@@ -100,6 +101,90 @@ class VrRoom(object):
 
         return module
 
+
+class VrRoom_FIRS_WGN(VrRoom):
+    f"""
+    This assumes you have used a full matrix of FIR filters and that you want to use one WGN reverb ir per each loudspeaker.
+    If you have number of microphones != from number of speakers this class still works.
+    """
+
+    def __init__(
+            self,
+            n_M: int = 2,
+            n_L: int = 2,
+            fs: int = 32000,
+            nfft: int = 2 * 480000,
+            alias_decay_db: float = 0.0,
+            FIR_order: int = 100,
+            requires_grad: bool = False,
+            wgn_t60: float = 2.0
+    ) -> None:
+        r"""
+        Initializes the class as a series of FIRs and WGN reverb.
+
+            **Args**:
+                - n_M (int): Number of system microphones.
+                - n_L (int): Number of system loudspeakers.
+                - fs (int): Sampling frequency [Hz].
+                - nfft (int): FFT size.
+                - alias_decay_db (float): Anti-time-aliasing decay [dB].
+                - FIR_order (int): FIR filter order.
+                - wgn_t60 (float): T60 of the WGN reverb (broadband).
+                - requires_grad (bool): Whether the filter is learnable.
+
+            **Attributes**:
+                [- _VrRoom attributes]
+                - FIR_order (int): FIR filter order.
+                - wgn_t60 (float): T60 of the WGN reverb (broadband).
+        """
+
+        VrRoom.__init__(
+            self,
+            n_M=n_M,
+            n_L=n_L,
+            fs=fs,
+            nfft=nfft,
+            alias_decay_db=alias_decay_db
+        )
+        self.FIR_order = FIR_order
+        self.wgn_t60 = wgn_t60
+
+        self.FIRs = self.gen_FIRs(requires_grad)
+        self.WGN_rev = self.gen_WGN_rev()
+
+        self.v_ML = system.Series(self.FIRs, self.WGN_rev)
+
+    def gen_FIRs(self, requires_grad) -> dsp.Filter:
+        module = dsp.Filter(
+            size=(self.FIR_order, self.n_L, self.n_M),
+            nfft=self.nfft,
+            requires_grad=requires_grad,
+            alias_decay_db=self.alias_decay_db
+        )
+        return module
+
+    def gen_WGN_rev(self) -> dsp.parallelFilter:
+        rirs = flamo.functional.WGN_reverb(
+            matrix_size=(self.n_L,),
+            t60=self.wgn_t60,
+            samplerate=self.fs,
+        )
+        module = dsp.parallelFilter(
+            size=(rirs.shape[0], self.n_L),
+            nfft=self.nfft,
+            requires_grad=False,
+            alias_decay_db=self.alias_decay_db
+        )
+        return module
+
+    def add_reverb_to_chain(self) -> None:
+        if self.in_training: Warning("Training has to be completed by now")
+        self.in_training = False
+        self.v_ML = system.Series(
+            self.FIRs,
+            self.WGN_rev
+        )
+        return None
 
 # ==================================================================
 # ============================ MATRICES ============================
