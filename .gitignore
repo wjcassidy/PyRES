@@ -176,3 +176,4 @@ cython_debug/
 .idea/inspectionProfiles
 .idea
 data
+examples/training_output
