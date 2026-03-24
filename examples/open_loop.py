@@ -5,6 +5,9 @@ import time
 import sys
 import os
 
+import flamo.functional
+from flamo.functional import mag2db, db2mag
+
 sys.path.insert(0, os.path.abspath(os.path.join(os.path.dirname(__file__), '..')))
 # PyTorch
 import torch
@@ -18,7 +21,8 @@ from PyRES.physical_room import PhRoom_dataset
 from PyRES.virtual_room import random_FIRs
 from PyRES.loss_functions import MSE_evs_mod
 from PyRES.functional import system_equalization_curve
-from PyRES.plots import plot_evs_compare, plot_spectrograms_compare
+from PyRES.plots import plot_evs_compare, plot_spectrograms_compare, plot_irs_compare
+from PyRES.virtual_room import VrRoom
 
 ###########################################################################################
 # In this example, we train a virtual room to equalize the RES.
@@ -53,11 +57,95 @@ from PyRES.plots import plot_evs_compare, plot_spectrograms_compare
 torch.manual_seed(141122)
 
 
+class VrRoom_FIRS_WGN(VrRoom):
+    f"""
+    This assumes you have used a full matrix of FIR filters and that you want to use one WGN reverb ir per each loudspeaker.
+    If you have number of microphones != from number of speakers this class still works.
+    """
+
+    def __init__(
+            self,
+            n_M: int = 2,
+            n_L: int = 2,
+            fs: int = 32000,
+            nfft: int = 2 * 480000,
+            alias_decay_db: float = 0.0,
+            FIR_order: int = 100,
+            requires_grad: bool = False,
+            wgn_t60: float = 2.0
+    ) -> None:
+        r"""
+        Initializes the class as a series of FIRs and WGN reverb.
+
+            **Args**:
+                - n_M (int): Number of system microphones.
+                - n_L (int): Number of system loudspeakers.
+                - fs (int): Sampling frequency [Hz].
+                - nfft (int): FFT size.
+                - alias_decay_db (float): Anti-time-aliasing decay [dB].
+                - FIR_order (int): FIR filter order.
+                - wgn_t60 (float): T60 of the WGN reverb (broadband).
+                - requires_grad (bool): Whether the filter is learnable.
+
+            **Attributes**:
+                [- _VrRoom attributes]
+                - FIR_order (int): FIR filter order.
+                - wgn_t60 (float): T60 of the WGN reverb (broadband).
+        """
+
+        VrRoom.__init__(
+            self,
+            n_M=n_M,
+            n_L=n_L,
+            fs=fs,
+            nfft=nfft,
+            alias_decay_db=alias_decay_db
+        )
+        self.FIR_order = FIR_order
+        self.wgn_t60 = wgn_t60
+
+        self.FIRs = self.gen_FIRs(requires_grad)
+        self.WGN_rev = self.gen_WGN_rev()
+
+        self.v_ML = system.Series(self.FIRs, self.WGN_rev)
+
+    def gen_FIRs(self, requires_grad) -> dsp.Filter:
+        module = dsp.Filter(
+            size=(self.FIR_order, self.n_L, self.n_M),
+            nfft=self.nfft,
+            requires_grad=requires_grad,
+            alias_decay_db=self.alias_decay_db
+        )
+        return module
+
+    def gen_WGN_rev(self) -> dsp.parallelFilter:
+        rirs = flamo.functional.WGN_reverb(
+            matrix_size=(self.n_L,),
+            t60=self.wgn_t60,
+            samplerate=self.fs,
+        )
+        module = dsp.parallelFilter(
+            size=(rirs.shape[0], self.n_L),
+            nfft=self.nfft,
+            requires_grad=False,
+            alias_decay_db=self.alias_decay_db
+        )
+        return module
+
+    def add_reverb_to_chain(self) -> None:
+        if self.in_training: Warning("Training has to be completed by now")
+        self.in_training = False
+        self.v_ML = system.Series(
+            self.FIRs,
+            self.WGN_rev
+        )
+        return None
+
 def train_virtual_room(args) -> None:
     # -------------------- Initialize RES ---------------------
     # Time-frequency
     samplerate = 32000  # Sampling frequency in Hz
-    nfft = int(samplerate * 4.5)  # FFT size
+    nfft = 2 * 480000#int(samplerate * 4.5)  # FFT size
     alias_decay_db = 0  # Anti-time-aliasing decay in dB
 
     # Physical room
@@ -75,22 +163,27 @@ def train_virtual_room(args) -> None:
     n_L = physical_room.transducer_number['lds']  # Number of loudspeakers
 
     # Virtual room
-    fir_order = 100#2 ** 8  # FIR filter order
-    virtual_room = random_FIRs(
+    wgn_reverb_t60_broadband = 0.5  # T60 of the WGN reverb
+    virtual_room = VrRoom_FIRS_WGN(
         n_M=n_M,
         n_L=n_L,
         fs=samplerate,
         nfft=nfft,
         alias_decay_db=alias_decay_db,
-        FIR_order=fir_order,
-        requires_grad=True
+        FIR_order=args.fir_length,
+        requires_grad=True,
+        wgn_t60=wgn_reverb_t60_broadband
     )
 
     # Reverberation Enhancement System
     res = RES(
         physical_room=physical_room,
-        virtual_room=virtual_room
+        virtual_room=virtual_room,
+        loop_gain_dB=args.loop_gain_dB
     )
+
+    if args.load_from_state:
+        res.set_v_ML_state(torch.load(f"model_states/{args.load_state_filename}"))
 
     # ------------------- Model Definition --------------------
     model = system.Shell(
@@ -132,28 +225,28 @@ def train_virtual_room(args) -> None:
     # ---------------- Initialize Loss Function ---------------
     criterion = MSE_evs_mod(
         iter_num=args.num,
-        freq_points=2**11,#nfft // 2 + 1,
+        freq_points=nfft // 2 + 1,
         samplerate=samplerate,
-        lowest_f=20,
-        highest_f=15000
+        lowest_f=20.0,
+        highest_f=samplerate / 2
     )
     trainer.register_criterion(criterion, 1.0)
 
-    # ------------------- Train the model --------------------
-    trainer.train(train_loader, valid_loader)
+    # --------------- Train the model and save ---------------
+    if not args.load_from_state:
+        trainer.train(train_loader, valid_loader)
+        res.save_state_to(directory='model_states/')
 
     # ------------ Performance after optimization ------------
     evs_opt = res.open_loop_eigenvalues()
     _, _, ir_opt = res.system_simulation()
+    res.set_G(db2mag(mag2db(res.compute_GBI()) - 6.0))
+    _, _, ir_opt_added_gain = res.system_simulation()
 
     # ------------------------ Plots -------------------------
     plot_evs_compare(evs_init, evs_opt, samplerate, nfft, 20, 8000)
-    plot_spectrograms_compare(ir_init[:, 0], ir_opt[:, 0], samplerate, nfft=2**11, noverlap=2**10)
-
-    # ---------------- Save the model parameters -------------
-    # If desired, you can use the following line to save the virtual room model state.
-    # res.save_state_to(directory='./model_states/')
-    # The model state can be then loaded in another instance of the same virtual room to skip the training.
+    plot_irs_compare(ir_init[:, 0], ir_opt[:, 0], samplerate)
+    plot_spectrograms_compare(ir_init[:, 0], ir_opt[:, 0], ir_opt_added_gain[:, 0], samplerate, nfft=2**11, noverlap=2**10)
 
     return None
 
@@ -166,16 +259,22 @@ if __name__ == '__main__':
     parser = argparse.ArgumentParser()
 
     # ----------------------- Dataset ----------------------
-    parser.add_argument('--num', type=int, default=32, help='dataset size')
+    parser.add_argument('--num', type=int, default=200, help='dataset size')
     parser.add_argument('--device', type=str, default='cpu', help='device to use for computation')
     parser.add_argument('--split', type=float, default=0.9, help='split ratio for training and validation')
     # ---------------------- Training ----------------------
     parser.add_argument('--train_dir', type=str, help='directory to save training results')
     parser.add_argument('--max_epochs', type=int, default=10, help='maximum number of epochs')
-    parser.add_argument('--patience_delta', type=float, default=1e-4,
+    parser.add_argument('--patience_delta', type=float, default=1e-5,
                         help='Minimum improvement in validation loss to be considered as an improvement')
     # ---------------------- Optimizer ---------------------
     parser.add_argument('--lr', type=float, default=1e-3, help='learning rate')
+    # ------------------------ AAES ------------------------
+    parser.add_argument('--loop_gain_dB', type=float, default=-3.0, help='loop gain in decibels')
+    parser.add_argument('--fir_length', type=int, default=100, help='number of FIR taps per channel')
+    # ----------------- Train or Load State ----------------
+    parser.add_argument('--load_from_state', type=bool, default=False, help='should load from state and skip training')
+    parser.add_argument('--load_state_filename', type=str, default="2026-03-24_14.55.56.pt", help='model state filename to load')
     # ----------------- Parse the arguments ----------------
     args = parser.parse_args()
 

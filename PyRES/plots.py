@@ -295,7 +295,7 @@ def plot_evs_distribution(evs, fs: int, nfft: int, lower_f_lim: float, higher_f_
 # ==================================================================
 # ==================== OPTIMIZATION COMPARISON =====================
 
-def plot_evs_compare(evs_init, evs_opt, fs: int, nfft: int, lower_f_lim: float, higher_f_lim: float, label1='Initialized', label2='Optimized') -> None:
+def plot_evs_compare(evs_init, evs_opt, fs: int, nfft: int, lower_f_lim: float, higher_f_lim: float, label1='Initialised', label2='Optimised') -> None:
     """
     Plot the magnitude distribution of the given eigenvalues.
 
@@ -329,7 +329,7 @@ def plot_evs_compare(evs_init, evs_opt, fs: int, nfft: int, lower_f_lim: float, 
     return None
 
 
-def plot_irs_compare(ir_1: torch.Tensor, ir_2: torch.Tensor, fs: int, label1='Initialized', label2='Optimized') -> None:
+def plot_irs_compare(ir_1: torch.Tensor, ir_2: torch.Tensor, fs: int, label1='Initialised', label2='Optimised') -> None:
     r"""
     Plot the system impulse responses at initialization and after optimization.
     
@@ -363,7 +363,15 @@ def plot_irs_compare(ir_1: torch.Tensor, ir_2: torch.Tensor, fs: int, label1='In
 
     plt.show(block=True)
 
-def plot_spectrograms_compare(ir_1: torch.Tensor, ir_2: torch.Tensor, fs: int, nfft: int=2**10, noverlap: int=2**8, label1='Initialized', label2='Optimized') -> None:
+def plot_spectrograms_compare(ir_1: torch.Tensor,
+                              ir_2: torch.Tensor,
+                              ir_3: torch.Tensor,
+                              fs: int,
+                              nfft: int=2**10,
+                              noverlap: int=2**8,
+                              label1='Initialised',
+                              label2='Optimised',
+                              label3='Optimised + Gain') -> None:
     r"""
     Plot the spectrograms of the system impulse responses at initialization and after optimization.
     
@@ -378,36 +386,46 @@ def plot_spectrograms_compare(ir_1: torch.Tensor, ir_2: torch.Tensor, fs: int, n
     """
     Spec_init,f,t = mlab.specgram(ir_1.detach().squeeze().numpy(), NFFT=nfft, Fs=fs, noverlap=noverlap)
     Spec_opt,_,_ = mlab.specgram(ir_2.detach().squeeze().numpy(), NFFT=nfft, Fs=fs, noverlap=noverlap)
+    Spec_opt_added_gain,_,_ = mlab.specgram(ir_3.detach().squeeze().numpy(), NFFT=nfft, Fs=fs, noverlap=noverlap)
 
     max_val = max(Spec_init.max(), Spec_opt.max())
     Spec_init = torch.tensor(Spec_init)/max_val
     Spec_opt = torch.tensor(Spec_opt)/max_val
-    
+    Spec_opt_added_gain = torch.tensor(Spec_opt_added_gain)/max_val
+
 
     plt.rcParams.update({'font.family':'serif', 'font.size':20, 'font.weight':'heavy', 'text.usetex':True})
-    fig,axes = plt.subplots(2,1, sharex=False, sharey=True, figsize=(8,5), constrained_layout=True)
+    fig,axes = plt.subplots(3,1, sharex=True, sharey=True, figsize=(8,7), constrained_layout=True)
     
-    plt.subplot(2,1,1)
-    plt.pcolormesh(t, f, 10*torch.log10(Spec_init), cmap='magma', vmin=-100, vmax=0)
+    plt.subplot(3,1,1)
+    _ = plt.pcolormesh(t, f, 10*torch.log10(Spec_init), cmap='magma', vmin=-100, vmax=0)
     plt.xlim(0, 4)
     plt.ylim(20, fs//2)
     plt.yscale('log')
     plt.title(label1)
     plt.grid(False)
 
-    plt.subplot(2,1,2)
-    im = plt.pcolormesh(t, f, 10*torch.log10(Spec_opt), cmap='magma', vmin=-100, vmax=0)
+    plt.subplot(3,1,2)
+    _ = plt.pcolormesh(t, f, 10*torch.log10(Spec_opt), cmap='magma', vmin=-100, vmax=0)
     plt.xlim(0, 4)
     plt.ylim(20, fs//2)
     plt.yscale('log')
     plt.title(label2)
     plt.grid(False)
 
-    fig.supxlabel('Time in seconds')
-    fig.supylabel('Frequency in Hz')
+    plt.subplot(3,1,3)
+    im = plt.pcolormesh(t, f, 10*torch.log10(Spec_opt_added_gain), cmap='magma', vmin=-100, vmax=0)
+    plt.xlim(0, 4)
+    plt.ylim(20, fs//2)
+    plt.yscale('log')
+    plt.title(label3)
+    plt.grid(False)
+
+    fig.supxlabel('Time (s)')
+    fig.supylabel('Frequency (Hz)')
 
     cbar = fig.colorbar(im, ax=axes[:], aspect=20)
-    cbar.set_label('Magnitude in dB')
+    cbar.set_label('Magnitude (dB)')
     ticks = torch.arange(start=-100, end=1, step=20)
     cbar.ax.set_ylim(-100, 0)
     cbar.ax.set_yticks(ticks, ['-100','-80','-60','-40','-20','0'])

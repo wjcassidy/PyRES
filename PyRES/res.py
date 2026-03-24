@@ -390,12 +390,12 @@ class RES(object):
                 - torch.Tensor: full system impulse responses [samples, n_A, n_S].
         """
         # Generate the paths
-        nat_path, ea_path = self.__system_paths()
-        
+        src_to_rec_path, src_to_rec_via_aaes_path = self.__system_paths()
+
         with torch.no_grad():
             # Compute system response
-            y_nat = nat_path.get_time_response().squeeze() # TODO: Check if squeeze is needed
-            y_ea = ea_path.get_time_response().squeeze()
+            y_nat = src_to_rec_path.get_time_response().squeeze() # TODO: Check if squeeze is needed
+            y_ea = src_to_rec_via_aaes_path.get_time_response().squeeze()
 
         # Expand to the explicit dimension
         y_nat = expand_to_dimension(array=y_nat, dim=2)
