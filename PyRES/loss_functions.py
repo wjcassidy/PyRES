@@ -56,7 +56,7 @@ class MSE_evs_mod(nn.Module):
                 - torch.Tensor: Mean Squared Error.
         """
         # Get the indexes of the frequency-point subset
-        idxs = self.__get_indexes()
+        idxs = self._get_indexes()
         # Get the eigenvalues
         evs_pred = get_magnitude(get_eigenvalues(y_pred[:,idxs,:,:]))
         evs_true = y_true[:,idxs,:]
@@ -66,7 +66,7 @@ class MSE_evs_mod(nn.Module):
         mse = torch.mean(torch.square(torch.abs(difference)))
         return mse
 
-    def __get_indexes(self):
+    def _get_indexes(self):
         r"""
         Get the indexes of the frequency-point subset.
 
@@ -80,7 +80,49 @@ class MSE_evs_mod(nn.Module):
         # Update interval counter
         self.interval_count = (self.interval_count+1) % (self.iter_num)
         return idxs
-    
+
+class MAsE_evs_mod(MSE_evs_mod):
+    def forward(self, y_pred, y_true):
+        r"""
+        Compute the MSE loss function.
+
+            **Args**:
+                - y_pred (torch.Tensor): Predicted eigenvalues.
+                - y_true (torch.Tensor): True eigenvalues.
+
+            **Returns**:
+                - torch.Tensor: Mean Squared Error.
+        """
+        # Get the indexes of the frequency-point subset
+        idxs = self._get_indexes()
+        # Get the eigenvalues
+        evs_pred = get_magnitude(get_eigenvalues(y_pred[:,idxs,:,:]))
+        evs_true = y_true[:,idxs,:]
+        difference = evs_pred - evs_true
+        mase = torch.where(difference > 0.0, difference ** 4, difference ** 2)
+        return mase.mean()
+
+class MSE_spectral(MSE_evs_mod):
+    def forward(self, y_pred, y_true):
+        r"""
+        Compute the MSE loss function.
+
+            **Args**:
+                - y_pred (torch.Tensor): Predicted eigenvalues.
+                - y_true (torch.Tensor): True eigenvalues.
+
+            **Returns**:
+                - torch.Tensor: Mean Squared Error.
+        """
+        # Get the indexes of the frequency-point subset
+        idxs = self._get_indexes()
+        # Get the eigenvalues
+        rfft_pred = get_magnitude(y_pred[:,idxs, :, :])
+        rfft_true = y_true[:,idxs, :, :]
+        # difference = rfft_pred - rfft_true
+        # mase = torch.where(difference > 0.0, difference ** 4, difference ** 2)
+        mse = torch.nn.functional.mse_loss(rfft_pred, rfft_true)
+        return mse
 
 class MSE_evs_idxs(nn.Module):
     def __init__(self, iter_num: int, freq_points: int, samplerate: int, freqs: torch.Tensor):
