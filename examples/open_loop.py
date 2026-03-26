@@ -78,7 +78,7 @@ def train_virtual_room(args) -> None:
     n_L = physical_room.transducer_number['lds']  # Number of loudspeakers
 
     # Virtual room
-    wgn_reverb_t60_broadband = 0.5  # T60 of the WGN reverb
+    wgn_reverb_t60_broadband = 2.0  # T60 of the WGN reverb
     virtual_room = VrRoom_FIRS_WGN(
         n_M=n_M,
         n_L=n_L,
@@ -155,7 +155,7 @@ def train_virtual_room(args) -> None:
     # ------------ Performance after optimization ------------
     evs_opt = res.open_loop_eigenvalues()
     _, _, ir_opt = res.system_simulation()
-    res.set_G(db2mag(mag2db(res.compute_GBI()) - 8.0))
+    res.set_G(db2mag(mag2db(res.compute_GBI()) + args.loop_gain_dB - 2.0))
     _, _, ir_opt_added_gain = res.system_simulation()
 
     # ------------------------ Plots -------------------------
@@ -176,7 +176,7 @@ if __name__ == '__main__':
     # ----------------------- Dataset ----------------------
     parser.add_argument('--num', type=int, default=200, help='dataset size')
     parser.add_argument('--device', type=str, default='cpu', help='device to use for computation')
-    parser.add_argument('--split', type=float, default=0.9, help='split ratio for training and validation')
+    parser.add_argument('--split', type=float, default=0.99, help='split ratio for training and validation')
     # ---------------------- Training ----------------------
     parser.add_argument('--train_dir', type=str, help='directory to save training results')
     parser.add_argument('--max_epochs', type=int, default=10, help='maximum number of epochs')
@@ -186,10 +186,10 @@ if __name__ == '__main__':
     parser.add_argument('--lr', type=float, default=1e-3, help='learning rate')
     # ------------------------ AAES ------------------------
     parser.add_argument('--loop_gain_dB', type=float, default=-3.0, help='loop gain in decibels')
-    parser.add_argument('--fir_length', type=int, default=1000, help='number of FIR taps per channel')
+    parser.add_argument('--fir_length', type=int, default=100, help='number of FIR taps per channel')
     # ----------------- Train or Load State ----------------
     parser.add_argument('--load_from_state', type=bool, default=False, help='should load from state and skip training')
-    parser.add_argument('--load_state_filename', type=str, default="2026-03-24_15.50.07.pt", help='model state filename to load')
+    parser.add_argument('--load_state_filename', type=str, default="MAsE1000taps.pt", help='model state filename to load')
     # ----------------- Parse the arguments ----------------
     args = parser.parse_args()
 

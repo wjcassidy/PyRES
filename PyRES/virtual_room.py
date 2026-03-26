@@ -152,6 +152,11 @@ class VrRoom_FIRS_WGN(VrRoom):
         self.FIRs = self.gen_FIRs(requires_grad)
         self.WGN_rev = self.gen_WGN_rev()
 
+        self.in_training = requires_grad
+
+        # if requires_grad:
+        #     self.v_ML = system.Series(self.FIRs)
+        # else:
         self.v_ML = system.Series(self.FIRs, self.WGN_rev)
 
     def gen_FIRs(self, requires_grad) -> dsp.Filter:
@@ -175,6 +180,7 @@ class VrRoom_FIRS_WGN(VrRoom):
             requires_grad=False,
             alias_decay_db=self.alias_decay_db
         )
+        module.assign_value(rirs)
         return module
 
     def add_reverb_to_chain(self) -> None:
